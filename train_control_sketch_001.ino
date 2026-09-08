@@ -11,9 +11,10 @@ void setup() {
   pinMode(5, OUTPUT);   // IN1 (PWM)
   pinMode(6, OUTPUT);   // IN2 (PWM)
 
-  // Increase PWM frequency on Timer 3 (pins 5, 6)
+  // Increase PWM frequency on Timer 3 and 4 (pins 5, 6)
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
   TCCR3B = (TCCR3B & 0b11111000) | 0b001;
+  TCCR4B = (TCCR4B & 0b11111000) | 0b001;
 
   // Serial.println("Enter voltage (0-255). 0=stop, 128=half, 255=full");
   // Serial.println("Positive=forward, Negative=backward");
