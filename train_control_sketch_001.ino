@@ -1,7 +1,7 @@
-int speed = 0;
-int targetSpeed = 0;
-const int maxSpeed = 128;
-const int acceleration = 1;
+int voltage = 0;
+int targetVoltage = 0;
+const int maxVoltage = 128;
+const int changeRate = 1;
 
 unsigned long lastUpdateTime = 0;
 const unsigned long updateInterval = 100;  // Update every 100ms
@@ -15,57 +15,63 @@ void setup() {
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
   TCCR3B = (TCCR3B & 0b11111000) | 0b001;
 
-  // Serial.println("Enter speed (0-255). 0=stop, 128=half, 255=full");
+  // Serial.println("Enter voltage (0-255). 0=stop, 128=half, 255=full");
   // Serial.println("Positive=forward, Negative=backward");
 }
 
 void loop() {
   if (Serial.available()) {
-    targetSpeed = Serial.parseInt();
+    targetVoltage = Serial.parseInt();
     while (Serial.available() && Serial.read() != '\n');  // Clear the newline
 
-    // Cap speed
-    if (targetSpeed > maxSpeed) {
-      targetSpeed = maxSpeed;
-    } else if (targetSpeed < -maxSpeed) {
-      targetSpeed = -maxSpeed;
+    // Cap voltage
+    if (targetVoltage > maxVoltage) {
+      targetVoltage = maxVoltage;
+    } else if (targetVoltage < -maxVoltage) {
+      targetVoltage = -maxVoltage;
     }
 
-    // Serial.print("Target speed: ");
-    // Serial.println(targetSpeed);
-    // Serial.print("Current speed: ");
-    // Serial.println(speed);
+    // Serial.print("Target voltage: ");
+    // Serial.println(targetVoltage);
+    // Serial.print("Current voltage: ");
+    // Serial.println(voltage);
   }
 
   unsigned long now = millis();
   if (now - lastUpdateTime >= updateInterval) {
-    if (speed != targetSpeed) {
-      if (speed < targetSpeed) {
-        speed += acceleration;
+    if (voltage != targetVoltage) {
+      if (voltage < targetVoltage) {
+        voltage += changeRate;
+        if (voltage > targetVoltage) {
+          voltage = targetVoltage;
+        }
       } else {
-        speed -= acceleration;
+        voltage -= changeRate;
+        if (voltage < targetVoltage) {
+          voltage = targetVoltage;
+        }
       }
 
-      if (speed > 0) {
+      if (voltage > 0) {
         // Forward
-        analogWrite(5, speed);    // IN1 gets PWM
+        analogWrite(5, voltage);    // IN1 gets PWM
         analogWrite(6, 0);        // IN2 stays off
-      } else if (speed < 0) {
+        Serial.write((byte)voltage);
+      } else if (voltage < 0) {
         // Backward
         analogWrite(5, 0);
-        analogWrite(6, -speed);   // IN2 gets PWM (negate to positive)
+        analogWrite(6, -voltage);   // IN2 gets PWM (negate to positive)
+        Serial.write((byte)(256-voltage));
       } else {
         // Stop
         analogWrite(5, 0);
         analogWrite(6, 0);
+        Serial.write((byte)0);
       }
 
-      // Write speed to serial
-      Serial.write((byte)speed);
-
-      if (speed == targetSpeed) {
-        // Serial.print("Target speed reached: ");
-        // Serial.println(speed);
+      if (voltage == targetVoltage) {
+        // Serial.print("Target voltage reached: ");
+        // Serial.println(voltage);
       }
     }
 
