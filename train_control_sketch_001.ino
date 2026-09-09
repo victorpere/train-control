@@ -62,7 +62,7 @@ void loop() {
         // Backward
         analogWrite(5, 0);
         analogWrite(6, -voltage);   // IN2 gets PWM (negate to positive)
-        Serial.write((byte)(256-voltage));
+        Serial.write((byte)(-voltage));
       } else {
         // Stop
         analogWrite(5, 0);
