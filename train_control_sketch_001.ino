@@ -1,3 +1,8 @@
+/*
+N-guage model railway control system using Arduino.
+2-way communication with upstream control via serial.
+*/
+
 int voltage = 0;
 int targetVoltage = 0;
 const int maxVoltage = 128;
@@ -15,9 +20,6 @@ void setup() {
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
   TCCR3B = (TCCR3B & 0b11111000) | 0b001;
   TCCR4B = (TCCR4B & 0b11111000) | 0b001;
-
-  // Serial.println("Enter voltage (0-255). 0=stop, 128=half, 255=full");
-  // Serial.println("Positive=forward, Negative=backward");
 }
 
 void loop() {
@@ -31,11 +33,6 @@ void loop() {
     } else if (targetVoltage < -maxVoltage) {
       targetVoltage = -maxVoltage;
     }
-
-    // Serial.print("Target voltage: ");
-    // Serial.println(targetVoltage);
-    // Serial.print("Current voltage: ");
-    // Serial.println(voltage);
   }
 
   unsigned long now = millis();
@@ -68,11 +65,6 @@ void loop() {
         analogWrite(5, 0);
         analogWrite(6, 0);
         Serial.write((byte)0);
-      }
-
-      if (voltage == targetVoltage) {
-        // Serial.print("Target voltage reached: ");
-        // Serial.println(voltage);
       }
     }
 
