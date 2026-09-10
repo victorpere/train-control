@@ -1,6 +1,19 @@
 /*
 N-guage model railway control system using Arduino.
 2-way communication with upstream control via serial.
+
+Protocol (3 bytes):
+  Byte 0: [type:1 | device_type:3 | device_id:4]
+  Byte 1: [value:8] (signed for voltage: -128 to +127)
+  Byte 2: [CRC8]
+
+Device types:
+  000 - Actual voltage (read-only)
+  001 - Target voltage (write and read)
+
+Request types:
+  0 - Query (request device state)
+  1 - Set (write value to device)
 */
 
 int voltage = 0;
@@ -10,6 +23,57 @@ const int changeRate = 1;
 
 unsigned long lastUpdateTime = 0;
 const unsigned long updateInterval = 100;  // Update every 100ms
+
+const uint8_t DEVICE_TYPE_ACTUAL_VOLTAGE = 0b000;
+const uint8_t DEVICE_TYPE_TARGET_VOLTAGE = 0b001;
+const uint8_t DEVICE_ID_TRACK = 0b0001;
+const uint8_t MSG_TYPE_QUERY = 0;
+const uint8_t MSG_TYPE_SET = 1;
+
+// Calculate CRC8 for two bytes (CRC8-ATM polynomial)
+uint8_t calculateCRC8(uint8_t byte0, uint8_t byte1) {
+  uint8_t crc = 0;
+  
+  crc ^= byte0;
+  for (int i = 0; i < 8; i++) {
+    crc = (crc << 1) ^ ((crc & 0x80) ? 0x07 : 0x00);
+  }
+  
+  crc ^= byte1;
+  for (int i = 0; i < 8; i++) {
+    crc = (crc << 1) ^ ((crc & 0x80) ? 0x07 : 0x00);
+  }
+  
+  return crc;
+}
+
+// Extract fields from header byte
+uint8_t getMessageType(uint8_t header) {
+  return (header >> 7) & 0x01;
+}
+
+uint8_t getDeviceType(uint8_t header) {
+  return (header >> 4) & 0x07;
+}
+
+uint8_t getDeviceID(uint8_t header) {
+  return header & 0x0F;
+}
+
+// Build header byte
+uint8_t buildHeader(uint8_t msgType, uint8_t deviceType, uint8_t deviceID) {
+  return (msgType << 7) | (deviceType << 4) | (deviceID & 0x0F);
+}
+
+// Send a message with header, value, and CRC
+void sendMessage(uint8_t msgType, uint8_t deviceType, uint8_t deviceID, int msgValue) {
+  uint8_t header = buildHeader(msgType, deviceType, deviceID);
+  uint8_t value = (uint8_t)msgValue;
+  uint8_t crc = calculateCRC8(header, value);
+  
+  uint8_t buf[3] = {header, value, crc};
+  Serial.write(buf, 3);
+}
 
 void setup() {
   Serial.begin(9600);
@@ -23,15 +87,41 @@ void setup() {
 }
 
 void loop() {
-  if (Serial.available()) {
-    targetVoltage = Serial.parseInt();
-    while (Serial.available() && Serial.read() != '\n');  // Clear the newline
-
-    // Cap voltage
-    if (targetVoltage > maxVoltage) {
-      targetVoltage = maxVoltage;
-    } else if (targetVoltage < -maxVoltage) {
-      targetVoltage = -maxVoltage;
+  // Read incoming 3-byte messages
+  if (Serial.available() >= 3) {
+    uint8_t msgBuf[3];
+    int bytesRead = Serial.readBytes(msgBuf, 3);
+    uint8_t header = msgBuf[0];
+    uint8_t value = msgBuf[1];
+    uint8_t crc = msgBuf[2];
+    
+    uint8_t calcCRC = calculateCRC8(header, value);
+    
+    // Verify CRC
+    if (calcCRC == crc) {
+      uint8_t msgType = getMessageType(header);
+      uint8_t deviceType = getDeviceType(header);
+      uint8_t deviceID = getDeviceID(header);
+      
+      if (deviceID == DEVICE_ID_TRACK) {
+        if (msgType == MSG_TYPE_SET && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
+          // Set target voltage
+          targetVoltage = (int8_t)value;
+          
+          // Cap voltage
+          if (targetVoltage > maxVoltage) {
+            targetVoltage = maxVoltage;
+          } else if (targetVoltage < -maxVoltage) {
+            targetVoltage = -maxVoltage;
+          }
+        } else if (msgType == MSG_TYPE_QUERY && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
+          // Query target voltage
+          sendMessage(MSG_TYPE_SET, DEVICE_TYPE_TARGET_VOLTAGE, DEVICE_ID_TRACK, targetVoltage);  
+        } else if (msgType == MSG_TYPE_QUERY && deviceType == DEVICE_TYPE_ACTUAL_VOLTAGE) {
+          // Query actual voltage
+          sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
+        }
+      }
     }
   }
 
@@ -53,19 +143,19 @@ void loop() {
       if (voltage > 0) {
         // Forward
         analogWrite(5, voltage);    // IN1 gets PWM
-        analogWrite(6, 0);        // IN2 stays off
-        Serial.write((byte)voltage);
+        analogWrite(6, 0);          // IN2 stays off
       } else if (voltage < 0) {
         // Backward
         analogWrite(5, 0);
         analogWrite(6, -voltage);   // IN2 gets PWM (negate to positive)
-        Serial.write((byte)(-voltage));
       } else {
         // Stop
         analogWrite(5, 0);
         analogWrite(6, 0);
-        Serial.write((byte)0);
       }
+      
+      // Send status update
+      sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
     }
 
     lastUpdateTime = now;
