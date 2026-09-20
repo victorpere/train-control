@@ -23,6 +23,9 @@ int targetVoltage = 0;
 const int maxVoltage = 128;
 const int changeRate = 1;
 int sensorState01 = 0;
+unsigned long lastSensorOnTime = 0;
+unsigned long lastSensorOffTime = 0;
+const unsigned long SENSOR_DEBOUNCE_TIME = 50;  // Debounce time for sensor in milliseconds
 
 unsigned long lastUpdateTime = 0;
 const unsigned long updateInterval = 100;  // Update every 100ms
@@ -98,15 +101,17 @@ void setup() {
 void loop() {
   // Detect sensor
   if (digitalRead(hallPin) == LOW) {
-    if (sensorState01 == 0) {
+    if (sensorState01 == 0 && (millis() - lastSensorOffTime > SENSOR_DEBOUNCE_TIME)) {
       // Sensor turned on
       sensorState01 = 1;
+      lastSensorOnTime = millis();
       sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 1);
     }
   } else {
-    if (sensorState01 == 1) {
+    if (sensorState01 == 1 && (millis() - lastSensorOnTime > SENSOR_DEBOUNCE_TIME)) {
       // Sensor turned off
       sensorState01 = 0;
+      lastSensorOffTime = millis();
       sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 0);
     }
   }
