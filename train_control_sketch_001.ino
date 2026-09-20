@@ -16,17 +16,25 @@ Request types:
   1 - Set (write value to device)
 */
 
+const int hallPin = 2;
+
 int voltage = 0;
 int targetVoltage = 0;
 const int maxVoltage = 128;
 const int changeRate = 1;
+int sensorState01 = 0;
 
 unsigned long lastUpdateTime = 0;
 const unsigned long updateInterval = 100;  // Update every 100ms
 
 const uint8_t DEVICE_TYPE_ACTUAL_VOLTAGE = 0b000;
 const uint8_t DEVICE_TYPE_TARGET_VOLTAGE = 0b001;
+const uint8_t DEVICE_TYPE_BLOCK = 0b010;
+const uint8_t DEVICE_TYPE_SENSOR = 0b011;
+
 const uint8_t DEVICE_ID_TRACK = 0b0001;
+const uint8_t DEVICE_ID_SENSOR01 = 0b0001;
+
 const uint8_t MSG_TYPE_QUERY = 0;
 const uint8_t MSG_TYPE_SET = 1;
 
@@ -79,6 +87,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(5, OUTPUT);   // IN1 (PWM)
   pinMode(6, OUTPUT);   // IN2 (PWM)
+  pinMode(hallPin, INPUT_PULLUP);
 
   // Increase PWM frequency on Timer 3 and 4 (pins 5, 6)
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
@@ -87,6 +96,21 @@ void setup() {
 }
 
 void loop() {
+  // Detect sensor
+  if (digitalRead(hallPin) == LOW) {
+    if (sensorState01 == 0) {
+      // Sensor turned on
+      sensorState01 = 1;
+      sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 1);
+    }
+  } else {
+    if (sensorState01 == 1) {
+      // Sensor turned off
+      sensorState01 = 0;
+      sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 0);
+    }
+  }
+
   // Read incoming 3-byte messages
   if (Serial.available() >= 3) {
     uint8_t msgBuf[3];
