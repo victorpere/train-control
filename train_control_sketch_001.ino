@@ -16,30 +16,37 @@ Request types:
   1 - Set (write value to device)
 */
 
-const int hallPin = 2;
-
-int voltage = 0;
-int targetVoltage = 0;
-const int maxVoltage = 128;
-const int changeRate = 1;
-int sensorState01 = 0;
-unsigned long lastSensorOnTime = 0;
-unsigned long lastSensorOffTime = 0;
-const unsigned long SENSOR_DEBOUNCE_TIME = 50;  // Debounce time for sensor in milliseconds
-
-unsigned long lastUpdateTime = 0;
-const unsigned long updateInterval = 100;  // Update every 100ms
-
+// Device Types
 const uint8_t DEVICE_TYPE_ACTUAL_VOLTAGE = 0b000;
 const uint8_t DEVICE_TYPE_TARGET_VOLTAGE = 0b001;
 const uint8_t DEVICE_TYPE_BLOCK = 0b010;
 const uint8_t DEVICE_TYPE_SENSOR = 0b011;
 
+// Device IDs
 const uint8_t DEVICE_ID_TRACK = 0b0001;
 const uint8_t DEVICE_ID_SENSOR01 = 0b0001;
 
+// Message Types
 const uint8_t MSG_TYPE_QUERY = 0;
 const uint8_t MSG_TYPE_SET = 1;
+
+// Pin numbers
+const int PIN_SENSOR01 = 2;
+
+// Track control constants
+const int MAX_VOLTAGE = 128;
+const int VOLTAGE_CHANGE_RATE = 1;
+const unsigned long SENSOR_DEBOUNCE_TIME = 50;  // Debounce time for sensor in milliseconds
+const unsigned long VOLTAGE_UPDATE_INTERVAL = 100;  // Update every 100ms
+
+// Track control variables
+int voltage = 0;
+int targetVoltage = 0;
+int sensorState01 = 0;
+unsigned long lastSensorOnTime = 0;
+unsigned long lastSensorOffTime = 0;
+unsigned long lastVoltageUpdateTime = 0;
+
 
 // Calculate CRC8 for two bytes (CRC8-ATM polynomial)
 uint8_t calculateCRC8(uint8_t byte0, uint8_t byte1) {
@@ -90,7 +97,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(5, OUTPUT);   // IN1 (PWM)
   pinMode(6, OUTPUT);   // IN2 (PWM)
-  pinMode(hallPin, INPUT_PULLUP);
+  pinMode(PIN_SENSOR01, INPUT_PULLUP);
 
   // Increase PWM frequency on Timer 3 and 4 (pins 5, 6)
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
@@ -100,7 +107,7 @@ void setup() {
 
 void loop() {
   // Detect sensor
-  if (digitalRead(hallPin) == LOW) {
+  if (digitalRead(PIN_SENSOR01) == LOW) {
     if (sensorState01 == 0 && (millis() - lastSensorOffTime > SENSOR_DEBOUNCE_TIME)) {
       // Sensor turned on
       sensorState01 = 1;
@@ -138,10 +145,10 @@ void loop() {
           targetVoltage = (int8_t)value;
           
           // Cap voltage
-          if (targetVoltage > maxVoltage) {
-            targetVoltage = maxVoltage;
-          } else if (targetVoltage < -maxVoltage) {
-            targetVoltage = -maxVoltage;
+          if (targetVoltage > MAX_VOLTAGE) {
+            targetVoltage = MAX_VOLTAGE;
+          } else if (targetVoltage < -MAX_VOLTAGE) {
+            targetVoltage = -MAX_VOLTAGE;
           }
         } else if (msgType == MSG_TYPE_QUERY && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
           // Query target voltage
@@ -155,15 +162,15 @@ void loop() {
   }
 
   unsigned long now = millis();
-  if (now - lastUpdateTime >= updateInterval) {
+  if (now - lastVoltageUpdateTime >= VOLTAGE_UPDATE_INTERVAL) {
     if (voltage != targetVoltage) {
       if (voltage < targetVoltage) {
-        voltage += changeRate;
+        voltage += VOLTAGE_CHANGE_RATE;
         if (voltage > targetVoltage) {
           voltage = targetVoltage;
         }
       } else {
-        voltage -= changeRate;
+        voltage -= VOLTAGE_CHANGE_RATE;
         if (voltage < targetVoltage) {
           voltage = targetVoltage;
         }
@@ -187,6 +194,6 @@ void loop() {
       sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
     }
 
-    lastUpdateTime = now;
+    lastVoltageUpdateTime = now;
   }
 }
