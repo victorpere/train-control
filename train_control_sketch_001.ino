@@ -12,7 +12,7 @@ Device types:
   001 - Target voltage (write and read)
   010 - Block (future use)
   011 - Sensor
-  100 - Point direction (turnout), ID 1-2, value 0 or 1
+  100 - Point direction (turnout), ID 0-1, value 0 or 1
 
 Request types:
   0 - Query (request device state)
@@ -27,15 +27,15 @@ const uint8_t DEVICE_TYPE_SENSOR = 0b011;
 const uint8_t DEVICE_TYPE_POINT_DIRECTION = 0b100;
 
 // Device IDs
-const uint8_t DEVICE_ID_TRACK = 0b0001;
-const uint8_t DEVICE_ID_SENSOR01 = 0b0001;
+const uint8_t DEVICE_ID_TRACK = 0b0000;
 
 // Message Types
 const uint8_t MSG_TYPE_QUERY = 0;
 const uint8_t MSG_TYPE_SET = 1;
 
 // Pin numbers
-const int PIN_SENSOR01 = 2;
+const int NUM_SENSORS = 4;
+const int PIN_SENSOR[NUM_SENSORS] = {2, 3, 4, 7};  // Sensor ID = index
 
 // Turnout H-bridge inputs; reversing polarity switches the Kato solenoid
 const int NUM_TURNOUTS = 2;
@@ -52,12 +52,12 @@ const unsigned long VOLTAGE_UPDATE_INTERVAL = 100;  // Update every 100ms
 // Track control variables
 int voltage = 0;
 int targetVoltage = 0;
-int sensorState01 = 0;
-unsigned long lastSensorOnTime = 0;
-unsigned long lastSensorOffTime = 0;
+int sensorState[NUM_SENSORS] = {0};
+unsigned long lastSensorOnTime[NUM_SENSORS] = {0};
+unsigned long lastSensorOffTime[NUM_SENSORS] = {0};
 unsigned long lastVoltageUpdateTime = 0;
 
-// Turnout state (index = ID - 1)
+// Turnout state (index = ID)
 uint8_t turnoutDirection[NUM_TURNOUTS] = {0, 0};
 unsigned long turnoutPulseStart[NUM_TURNOUTS] = {0, 0};
 bool turnoutPulsing[NUM_TURNOUTS] = {false, false};
@@ -121,7 +121,9 @@ void setup() {
   Serial.begin(9600);
   pinMode(5, OUTPUT);   // IN1 (PWM)
   pinMode(6, OUTPUT);   // IN2 (PWM)
-  pinMode(PIN_SENSOR01, INPUT_PULLUP);
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    pinMode(PIN_SENSOR[i], INPUT_PULLUP);
+  }
   for (int i = 0; i < NUM_TURNOUTS; i++) {
     pinMode(TURNOUT_PIN_A[i], OUTPUT);
     pinMode(TURNOUT_PIN_B[i], OUTPUT);
@@ -136,20 +138,21 @@ void setup() {
 }
 
 void loop() {
-  // Detect sensor
-  if (digitalRead(PIN_SENSOR01) == LOW) {
-    if (sensorState01 == 0 && (millis() - lastSensorOffTime > SENSOR_DEBOUNCE_TIME)) {
-      // Sensor turned on
-      sensorState01 = 1;
-      lastSensorOnTime = millis();
-      sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 1);
-    }
-  } else {
-    if (sensorState01 == 1 && (millis() - lastSensorOnTime > SENSOR_DEBOUNCE_TIME)) {
-      // Sensor turned off
-      sensorState01 = 0;
-      lastSensorOffTime = millis();
-      sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, DEVICE_ID_SENSOR01, 0);
+  // Detect sensors
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    unsigned long t = millis();
+    if (digitalRead(PIN_SENSOR[i]) == LOW) {
+      if (sensorState[i] == 0 && (t - lastSensorOffTime[i] > SENSOR_DEBOUNCE_TIME)) {
+        sensorState[i] = 1;
+        lastSensorOnTime[i] = t;
+        sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, i, 1);
+      }
+    } else {
+      if (sensorState[i] == 1 && (t - lastSensorOnTime[i] > SENSOR_DEBOUNCE_TIME)) {
+        sensorState[i] = 0;
+        lastSensorOffTime[i] = t;
+        sendMessage(MSG_TYPE_SET, DEVICE_TYPE_SENSOR, i, 0);
+      }
     }
   }
 
@@ -170,12 +173,11 @@ void loop() {
       uint8_t deviceID = getDeviceID(header);
       
       if (deviceType == DEVICE_TYPE_POINT_DIRECTION) {
-        if (deviceID >= 1 && deviceID <= NUM_TURNOUTS) {
-          uint8_t index = deviceID - 1;
+        if (deviceID < NUM_TURNOUTS) {
           if (msgType == MSG_TYPE_SET && value <= 1) {
-            setTurnout(index, value);
+            setTurnout(deviceID, value);
           } else if (msgType == MSG_TYPE_QUERY) {
-            sendMessage(MSG_TYPE_SET, DEVICE_TYPE_POINT_DIRECTION, deviceID, turnoutDirection[index]);
+            sendMessage(MSG_TYPE_SET, DEVICE_TYPE_POINT_DIRECTION, deviceID, turnoutDirection[deviceID]);
           }
         }
       } else if (deviceID == DEVICE_ID_TRACK) {
