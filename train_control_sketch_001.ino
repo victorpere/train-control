@@ -10,6 +10,9 @@ Protocol (3 bytes):
 Device types:
   000 - Actual voltage (read-only)
   001 - Target voltage (write and read)
+  010 - Block (future use)
+  011 - Sensor
+  100 - Point direction (turnout), ID 1-2, value 0 or 1
 
 Request types:
   0 - Query (request device state)
@@ -21,6 +24,7 @@ const uint8_t DEVICE_TYPE_ACTUAL_VOLTAGE = 0b000;
 const uint8_t DEVICE_TYPE_TARGET_VOLTAGE = 0b001;
 const uint8_t DEVICE_TYPE_BLOCK = 0b010;
 const uint8_t DEVICE_TYPE_SENSOR = 0b011;
+const uint8_t DEVICE_TYPE_POINT_DIRECTION = 0b100;
 
 // Device IDs
 const uint8_t DEVICE_ID_TRACK = 0b0001;
@@ -32,6 +36,12 @@ const uint8_t MSG_TYPE_SET = 1;
 
 // Pin numbers
 const int PIN_SENSOR01 = 2;
+
+// Turnout H-bridge inputs; reversing polarity switches the Kato solenoid
+const int NUM_TURNOUTS = 2;
+const int TURNOUT_PIN_A[NUM_TURNOUTS] = {22, 24};
+const int TURNOUT_PIN_B[NUM_TURNOUTS] = {23, 25};
+const unsigned long TURNOUT_PULSE_TIME = 50;  // Kato solenoids must only be pulsed briefly
 
 // Track control constants
 const int MAX_VOLTAGE = 128;
@@ -46,6 +56,20 @@ int sensorState01 = 0;
 unsigned long lastSensorOnTime = 0;
 unsigned long lastSensorOffTime = 0;
 unsigned long lastVoltageUpdateTime = 0;
+
+// Turnout state (index = ID - 1)
+uint8_t turnoutDirection[NUM_TURNOUTS] = {0, 0};
+unsigned long turnoutPulseStart[NUM_TURNOUTS] = {0, 0};
+bool turnoutPulsing[NUM_TURNOUTS] = {false, false};
+
+// Start a pulse in the requested direction; loop() ends it
+void setTurnout(uint8_t index, uint8_t direction) {
+  turnoutDirection[index] = direction;
+  digitalWrite(TURNOUT_PIN_A[index], direction ? LOW : HIGH);
+  digitalWrite(TURNOUT_PIN_B[index], direction ? HIGH : LOW);
+  turnoutPulseStart[index] = millis();
+  turnoutPulsing[index] = true;
+}
 
 
 // Calculate CRC8 for two bytes (CRC8-ATM polynomial)
@@ -98,6 +122,12 @@ void setup() {
   pinMode(5, OUTPUT);   // IN1 (PWM)
   pinMode(6, OUTPUT);   // IN2 (PWM)
   pinMode(PIN_SENSOR01, INPUT_PULLUP);
+  for (int i = 0; i < NUM_TURNOUTS; i++) {
+    pinMode(TURNOUT_PIN_A[i], OUTPUT);
+    pinMode(TURNOUT_PIN_B[i], OUTPUT);
+    digitalWrite(TURNOUT_PIN_A[i], LOW);
+    digitalWrite(TURNOUT_PIN_B[i], LOW);
+  }
 
   // Increase PWM frequency on Timer 3 and 4 (pins 5, 6)
   // Shift frequency from ~490 Hz to ~3900 Hz (less noticeable)
@@ -139,7 +169,16 @@ void loop() {
       uint8_t deviceType = getDeviceType(header);
       uint8_t deviceID = getDeviceID(header);
       
-      if (deviceID == DEVICE_ID_TRACK) {
+      if (deviceType == DEVICE_TYPE_POINT_DIRECTION) {
+        if (deviceID >= 1 && deviceID <= NUM_TURNOUTS) {
+          uint8_t index = deviceID - 1;
+          if (msgType == MSG_TYPE_SET && value <= 1) {
+            setTurnout(index, value);
+          } else if (msgType == MSG_TYPE_QUERY) {
+            sendMessage(MSG_TYPE_SET, DEVICE_TYPE_POINT_DIRECTION, deviceID, turnoutDirection[index]);
+          }
+        }
+      } else if (deviceID == DEVICE_ID_TRACK) {
         if (msgType == MSG_TYPE_SET && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
           // Set target voltage
           targetVoltage = (int8_t)value;
@@ -158,6 +197,15 @@ void loop() {
           sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
         }
       }
+    }
+  }
+
+  // End turnout pulses
+  for (int i = 0; i < NUM_TURNOUTS; i++) {
+    if (turnoutPulsing[i] && millis() - turnoutPulseStart[i] >= TURNOUT_PULSE_TIME) {
+      digitalWrite(TURNOUT_PIN_A[i], LOW);
+      digitalWrite(TURNOUT_PIN_B[i], LOW);
+      turnoutPulsing[i] = false;
     }
   }
 
