@@ -156,10 +156,13 @@ void loop() {
     }
   }
 
-  // Read incoming 3-byte messages
-  if (Serial.available() >= 3) {
-    uint8_t msgBuf[3];
-    int bytesRead = Serial.readBytes(msgBuf, 3);
+  // Read incoming 3-byte messages; on CRC failure drop one byte so framing recovers after a lost byte
+  static uint8_t msgBuf[3];
+  static uint8_t msgLen = 0;
+  while (Serial.available() > 0) {
+    msgBuf[msgLen++] = Serial.read();
+    if (msgLen < 3) continue;
+
     uint8_t header = msgBuf[0];
     uint8_t value = msgBuf[1];
     uint8_t crc = msgBuf[2];
@@ -199,6 +202,11 @@ void loop() {
           sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
         }
       }
+      msgLen = 0;
+    } else {
+      msgBuf[0] = msgBuf[1];
+      msgBuf[1] = msgBuf[2];
+      msgLen = 2;
     }
   }
 
