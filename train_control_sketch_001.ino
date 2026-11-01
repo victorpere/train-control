@@ -4,7 +4,7 @@ N-guage model railway control system using Arduino.
 
 Protocol (3 bytes):
   Byte 0: [type:1 | device_type:3 | device_id:4]
-  Byte 1: [value:8] (signed for voltage: -128 to +127)
+  Byte 1: [value:8] (signed for voltage: -127 to +127; target voltage -128 = emergency stop)
   Byte 2: [CRC8]
 
 Device types:
@@ -45,6 +45,7 @@ const unsigned long TURNOUT_PULSE_TIME = 50;  // Kato solenoids must only be pul
 
 // Track control constants
 const int MAX_VOLTAGE = 128;
+const uint8_t EMERGENCY_STOP_VALUE = 0b10000000;  // -128 as target voltage
 const int VOLTAGE_CHANGE_RATE = 1;
 const unsigned long SENSOR_DEBOUNCE_TIME = 50;  // Debounce time for sensor in milliseconds
 const unsigned long VOLTAGE_UPDATE_INTERVAL = 100;  // Update every 100ms
@@ -185,14 +186,23 @@ void loop() {
         }
       } else if (deviceID == DEVICE_ID_TRACK) {
         if (msgType == MSG_TYPE_SET && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
-          // Set target voltage
-          targetVoltage = (int8_t)value;
-          
-          // Cap voltage
-          if (targetVoltage > MAX_VOLTAGE) {
-            targetVoltage = MAX_VOLTAGE;
-          } else if (targetVoltage < -MAX_VOLTAGE) {
-            targetVoltage = -MAX_VOLTAGE;
+          if (value == EMERGENCY_STOP_VALUE) {
+            // Emergency stop: cut power immediately, no ramp
+            targetVoltage = 0;
+            voltage = 0;
+            analogWrite(5, 0);
+            analogWrite(6, 0);
+            sendMessage(MSG_TYPE_SET, DEVICE_TYPE_ACTUAL_VOLTAGE, DEVICE_ID_TRACK, voltage);
+          } else {
+            // Set target voltage
+            targetVoltage = (int8_t)value;
+
+            // Cap voltage
+            if (targetVoltage > MAX_VOLTAGE) {
+              targetVoltage = MAX_VOLTAGE;
+            } else if (targetVoltage < -MAX_VOLTAGE) {
+              targetVoltage = -MAX_VOLTAGE;
+            }
           }
         } else if (msgType == MSG_TYPE_QUERY && deviceType == DEVICE_TYPE_TARGET_VOLTAGE) {
           // Query target voltage
