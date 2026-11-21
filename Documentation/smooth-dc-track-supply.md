@@ -106,11 +106,11 @@ The relay de-energised gives rail A = +V, rail B = GND. Energised swaps them.
    SDA(20) ─ SDA           │            │           E
    SCL(21) ─ SCL           │            │           │
               OUT ───┐     │            │           ├──────── Q2 base
-                     │   ┌─8────┐       │          [1.2Ω]
-                     └──3+      1──────┘           │
-                       │ LM358  │         Q2 emitter┴── VREG ──┬─ [1kΩ] ─ GND
-                  ┌────2−      │      (Q2 collector → Q1 base)  │
-                  │    └─4──────┘                                │
+                     │ ┌───8────┐       │          [1.2Ω]
+                     └──3+      1───────┘           │
+                       │ LM358  │         Q2 emitter┴── VREG ───┬─ [1kΩ] ─ GND
+                  ┌────2−       │      (Q2 collector → Q1 base) │
+                  │    └─4──────┘                               │
                   │      │                                      │
                   │     GND                                     │
                   ├──[10k Rg]── GND                             │
