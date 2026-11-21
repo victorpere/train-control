@@ -343,7 +343,60 @@ Module settings:
 - L298N #1 is not wired in this design. Disconnect its IN1/IN2 from pins 5 and 6 and its track output, or remove it.
 - Recommended: 10 kΩ pull-downs from each L298N #2 IN line (pins 22–25) to GND, and a 10 kΩ pull-down from pin 8 to GND so the relay stays off during reset.
 
-## 9. Calculations
+## 9. Perfboard layout
+
+The supply fits on one perfboard of about 9 × 7 cm (landscape, about 36 × 28 holes at 2.54 mm pitch). Signal flows left to right: inputs, DAC, op-amp, Q1, relay, track terminals. Check the layout against the real footprints of the relay and DAC board before soldering.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ +12V BUS ════════════════════════════════════════════════════│
+│                                                              │
+│ J1    C1 100µF  C2 100nF                           ┌────┐    │
+│ +12V       ┌───────┐     ┌────────┐                │ Q1 ├────► heatsink
+│ GND        │MCP4725│     │ LM358  │                └─┬──┘    │
+│ +5V        │ board │──►──│  U1    │                  │       │
+│ SDA        └───────┘     └───┬────┘                Rs 1.2Ω   │
+│ SCL        Rg ─ Rf ‖ Cf──────┘                     Q2 TP-VREG│
+│ REL                                                          │
+│ Q3   1k   D1                 ┌────────────────┐              │
+│ Q3 + 1k + D1                 │  K1 DPDT relay │──► J2 A/B    │
+│                              └────────────────┘              │
+│ GND BUS ═════════════════════════════════════════════════════│
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Placement by zone
+
+| Zone | Parts | Notes |
+|---|---|---|
+| Left edge | J1 screw terminals: +12 V, GND, +5 V, SDA, SCL, REL | All wiring from the Arduino and supply enters here |
+| Top edge | +12 V bus (thick wire or doubled solder bridge) | Feeds U1 pin 8 and Q1 collector |
+| Bottom edge | GND bus (thick wire or doubled solder bridge) | Single return to the GND terminal block |
+| Upper left | MCP4725 board and U1 socket, side by side | Keep `DAC_OUT` to U1 pin 3 as short as possible |
+| Under U1 | Rf, Rg and Cf (100 pF) | Tight against U1 pins 2 and 3, with short leads |
+| Upper right | Q1 at the top edge, bolted to the heatsink | Heatsink overhangs the board edge. The tab is at +12 V, so insulate it |
+| Right of Q1 | Rs (1.2 Ω) and Q2 | Short leads between Q1 emitter, Rs and Q2 |
+| Centre right | VREG node, test pad and 1 kΩ bleed to GND | Feedback wire to Rf starts here |
+| Bottom right | K1 relay, J2 track terminals (rail A, rail B) | Keep the relay away from the op-amp input traces |
+| Bottom left | Q3, 1 kΩ base resistor, D1 flyback diode | Diode next to the relay coil pins |
+
+### Build order
+
+1. Fit the sockets, headers and terminals, then the buses.
+2. Add the resistors and small capacitors.
+3. Add Q2, Q3, D1 and the relay.
+4. Mount Q1 on its heatsink, then wire it in.
+5. Insert U1 last, after checking the +12 V and GND rails with a multimeter.
+6. Check VREG with a 100 Ω load before connecting the locomotive.
+
+### Trace and wire tips
+
+- **Current path:** The +12 V bus, Q1, Rs, VREG, the relay and the track wires carry up to about 0.5 A. Use thick wire or doubled solder bridges there.
+- **Signal wires:** The DAC output, the feedback wire and the I2C lines are low current. Thin wire on the solder side is fine.
+- **Test pads:** Add pads for `DAC_OUT`, `Q1E` and `VREG`.
+- **Single-board note:** The MCP4725 can go on a separate small board connected with a 4-wire header if the relay and DAC board are too bulky. It is still one supply.
+
+## 10. Calculations
 
 - **Output voltage:** $V_{out} = 2 \times V_{DAC}$.
 - **Maximum output:** About 8.5 V. The LM358 output reaches about 10.5 V on a 12 V supply, minus roughly 1.5 V for the TIP120 base-emitter drop and about 0.4 V across the sense resistor at 0.3 A. Cap the DAC at about 4 V (code ≈ 3276), giving about 8 V.
@@ -352,7 +405,7 @@ Module settings:
   - 12 V in, 4 V out, 0.3 A: about 2.4 W.
   - Short circuit at the current limit: about 6.5 W. The heatsink must handle this, and shorts must be cleared quickly.
 
-## 10. Firmware changes (not yet made)
+## 11. Firmware changes (not yet made)
 
 - Replace `analogWrite` on pins 5 and 6 with a DAC write (for example the Adafruit MCP4725 library).
 - Map $|voltage|$ (0 to 127) to DAC codes 0 to about 3276.
@@ -361,7 +414,7 @@ Module settings:
 - Consider a minimum start voltage, because smooth DC has weaker stiction breakaway than PWM.
 - Keep the serial protocol, ramp rate and turnout and sensor code unchanged.
 
-## 11. Test plan
+## 12. Test plan
 
 1. Build the circuit with a 100 Ω load instead of the locomotive.
 2. Check that the output is 0 V at DAC code 0, and about twice the DAC voltage in between.
@@ -371,7 +424,7 @@ Module settings:
 6. Test relay switching with the output at 0 V.
 7. Test with a known-good locomotive (Kato 10-1898) before any other.
 
-## 12. Trade-offs and risks
+## 13. Trade-offs and risks
 
 - **Smooth, quiet DC** and exact 0 V, but **inefficient**: the difference between supply and track voltage is dissipated as heat.
 - Suited to a single locomotive at modest current. Several locomotives or higher current would need a larger heat budget or a buck-converter design.
@@ -379,11 +432,11 @@ Module settings:
 - Linear feedback with a Darlington follower can oscillate if it is wired badly. Keep leads short, keep the 100 pF and 470 Ω parts, and avoid a large output capacitor.
 - The TIP120 tab is live at +12 V, so insulate the heatsink.
 
-## 13. Alternatives
+## 14. Alternatives
 
 - **L298N as the polarity switch:** Feed VREG into L298N #1's motor supply terminal, drive IN1 and IN2 as plain digital outputs, and keep ENA on. This reuses existing hardware and avoids the relay, but costs about 2 V, so the maximum track voltage falls to about 6 V.
 - **Digitally controlled buck converter:** More efficient and better for higher current, but needs a modified feedback network and more careful design.
 
-## 14. Related files
+## 15. Related files
 
 - [system-setup.md](system-setup.md): current setup, pin map and wiring.
